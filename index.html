@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monster Punch - Brain Brawl (Nombor Bahasa Arab)</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Amiri:wght@700&display=swap" rel="stylesheet">
+
+    <!-- MediaPipe Hands Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Fredoka', cursive, sans-serif;
+            user-select: none;
+            overflow: hidden;
+            background: #0f172a;
+        }
+
+        .arabic-text {
+            font-family: 'Amiri', serif;
+        }
+
+        /* Continuous Floating Animation for Monsters */
+        @keyframes floatMonster {
+            0%, 100% { transform: translateY(0px) rotate(-1deg); }
+            50% { transform: translateY(-12px) rotate(1deg); }
+        }
+
+        .animate-float {
+            animation: floatMonster 3s ease-in-out infinite;
+        }
+
+        /* Pulse glow effect */
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 15px rgba(234, 179, 8, 0.4); }
+            50% { box-shadow: 0 0 30px rgba(234, 179, 8, 0.9); }
+        }
+
+        .glow-effect {
+            animation: pulseGlow 2s infinite;
+        }
+
+        /* Mirror Video Canvas for Natural Control */
+        .mirror {
+            transform: scaleX(-1);
+        }
+    </style>
+</head>
+<body class="text-white min-h-screen flex flex-col justify-between relative bg-gradient-to-b from-slate-900 via-indigo-950 to-purple-950">
+
+    <!-- WEBCAM BACKGROUND & EFFECT CANVAS LAYER -->
+    <div class="absolute inset-0 z-0 overflow-hidden flex items-center justify-center">
+        <!-- Hidden raw video element -->
+        <video id="webcam" class="hidden" playsinline></video>
+        <!-- Rendered mirrored canvas overlay -->
+        <canvas id="output_canvas" class="w-full h-full object-cover mirror opacity-30"></canvas>
+        <!-- Overlay Canvas for Slash Effects & Particles -->
+        <canvas id="fx_canvas" class="absolute inset-0 w-full h-full pointer-events-none z-20"></canvas>
+    </div>
+
+    <!-- MAIN GAME CONTAINER (UI OVERLAY) -->
+    <div id="game-ui" class="relative z-10 flex flex-col justify-between h-screen w-full p-4 md:p-6 max-w-7xl mx-auto">
+        
+        <!-- HEADER / HUD AREA -->
+        <header class="flex justify-between items-center bg-slate-900/80 backdrop-blur-md rounded-2xl p-4 border-2 border-indigo-500/30 shadow-2xl">
+            <!-- Lives Display -->
+            <div class="flex items-center space-x-2">
+                <span class="text-sm font-bold text-slate-300 uppercase tracking-wider hidden sm:inline">Nyawa:</span>
+                <div id="lives-container" class="flex space-x-1 text-3xl">
+                    <span class="text-red-500 animate-pulse">❤️</span>
+                    <span class="text-red-500 animate-pulse">❤️</span>
+                    <span class="text-red-500 animate-pulse">❤️</span>
+                </div>
+            </div>
+
+            <!-- Question Progress & Timer -->
+            <div class="flex flex-col items-center">
+                <div id="question-number" class="text-amber-400 font-bold text-lg md:text-xl tracking-wide">
+                    SOALAN 1 / 10
+                </div>
+                <!-- Timer Bar -->
+                <div class="w-32 md:w-48 bg-slate-700 h-3 rounded-full overflow-hidden mt-1 border border-slate-600">
+                    <div id="timer-bar" class="bg-gradient-to-r from-green-400 to-emerald-500 h-full w-full transition-all duration-1000"></div>
+                </div>
+            </div>
+
+            <!-- Score Display -->
+            <div class="flex items-center bg-amber-500/20 border border-amber-500/50 px-4 py-2 rounded-xl">
+                <span class="text-2xl mr-2">⭐</span>
+                <div>
+                    <div class="text-xs text-amber-300 font-semibold uppercase">Skor</div>
+                    <div id="score-text" class="text-2xl font-black text-amber-400">0</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- QUESTION BANNER AREA -->
+        <div class="mt-4 text-center">
+            <div class="inline-block bg-indigo-900/90 backdrop-blur-md border-4 border-yellow-400/80 rounded-3xl p-4 md:p-6 shadow-2xl max-w-3xl w-full glow-effect">
+                <h2 id="question-title" class="text-slate-300 font-medium text-lg md:text-xl mb-1">Kira dan pilih jawapan yang betul!</h2>
+                <div id="question-content" class="text-3xl md:text-5xl font-extrabold text-white flex items-center justify-center gap-3">
+                    <span id="q-visual" class="text-yellow-300">🍎 🍎</span>
+                    <span id="q-text" class="arabic-text text-amber-400 text-4xl md:text-6xl">٢</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- MONSTERS / ANSWERS PLAYFIELD AREA -->
+        <div id="monsters-container" class="grid grid-cols-1 md:grid-cols-3 gap-6 my-auto max-w-5xl mx-auto w-full px-4">
+            <!-- Monster 1 (Left) -->
+            <div id="monster-0" onclick="handlePunch(0)" class="monster-card relative flex flex-col items-center cursor-pointer transform hover:scale-105 transition-all duration-300 animate-float">
+                <div class="relative w-48 h-48 md:w-56 md:h-56 flex items-center justify-center">
+                    <!-- SVG Monster 1 (Red Blob Monster) -->
+                    <svg class="w-full h-full drop-shadow-[0_10px_20px_rgba(239,68,68,0.5)]" viewBox="0 0 200 200">
+                        <path fill="#ef4444" d="M45,-62C58,-53,67,-38,72,-22C77,-6,78,11,73,26C68,41,57,54,43,63C29,72,12,77,-5,84C-22,91,-44,83,-57,71C-70,59,-74,43,-75,27C-76,11,-74,-5,-68,-20C-62,-35,-52,-49,-39,-58C-26,-67,-13,-71,2,-74C17,-77,32,-71,45,-62Z" transform="translate(100 100)" />
+                        <!-- Eyes -->
+                        <circle cx="70" cy="80" r="18" fill="white"/>
+                        <circle cx="70" cy="80" r="8" fill="black"/>
+                        <circle cx="130" cy="80" r="18" fill="white"/>
+                        <circle cx="130" cy="80" r="8" fill="black"/>
+                        <!-- Mouth -->
+                        <path d="M 70 130 Q 100 160 130 130" stroke="black" stroke-width="6" fill="transparent" stroke-linecap="round"/>
+                        <!-- Horns -->
+                        <polygon points="60,40 40,10 75,30" fill="#b91c1c"/>
+                        <polygon points="140,40 160,10 125,30" fill="#b91c1c"/>
+                    </svg>
+                    <!-- Answer Card Badge -->
+                    <div class="absolute bottom-2 bg-yellow-400 border-4 border-amber-600 rounded-2xl px-6 py-2 text-slate-900 font-extrabold text-3xl md:text-4xl shadow-lg arabic-text ans-text">
+                        ١
+                    </div>
+                </div>
+            </div>
+
+            <!-- Monster 2 (Center) -->
+            <div id="monster-1" onclick="handlePunch(1)" class="monster-card relative flex flex-col items-center cursor-pointer transform hover:scale-105 transition-all duration-300 animate-float" style="animation-delay: -1s;">
+                <div class="relative w-48 h-48 md:w-56 md:h-56 flex items-center justify-center">
+                    <!-- SVG Monster 2 (Green Cyclops Monster) -->
+                    <svg class="w-full h-full drop-shadow-[0_10px_20px_rgba(34,197,94,0.5)]" viewBox="0 0 200 200">
+                        <path fill="#22c55e" d="M41,-57C53,-48,63,-35,69,-20C75,-5,77,12,72,27C67,42,55,55,40,64C25,73,5,78,-15,77C-35,76,-55,69,-66,55C-77,41,-79,20,-76,1C-73,-18,-65,-36,-53,-46C-41,-56,-25,-58,-8,-56C9,-54,29,-66,41,-57Z" transform="translate(100 100)" />
+                        <!-- Eye -->
+                        <circle cx="100" cy="80" r="24" fill="white"/>
+                        <circle cx="100" cy="80" r="11" fill="#15803d"/>
+                        <circle cx="103" cy="77" r="4" fill="white"/>
+                        <!-- Mouth & Sharp Teeth -->
+                        <path d="M 65 125 Q 100 150 135 125" stroke="black" stroke-width="6" fill="#7f1d1d"/>
+                        <polygon points="80,126 85,135 90,126" fill="white"/>
+                        <polygon points="110,126 115,135 120,126" fill="white"/>
+                    </svg>
+                    <!-- Answer Card Badge -->
+                    <div class="absolute bottom-2 bg-yellow-400 border-4 border-amber-600 rounded-2xl px-6 py-2 text-slate-900 font-extrabold text-3xl md:text-4xl shadow-lg arabic-text ans-text">
+                        ٢
+                    </div>
+                </div>
+            </div>
+
+            <!-- Monster 3 (Right) -->
+            <div id="monster-2" onclick="handlePunch(2)" class="monster-card relative flex flex-col items-center cursor-pointer transform hover:scale-105 transition-all duration-300 animate-float" style="animation-delay: -2s;">
+                <div class="relative w-48 h-48 md:w-56 md:h-56 flex items-center justify-center">
+                    <!-- SVG Monster 3 (Blue Spike Monster) -->
+                    <svg class="w-full h-full drop-shadow-[0_10px_20px_rgba(14,165,233,0.5)]" viewBox="0 0 200 200">
+                        <path fill="#0ea5e9" d="M38,-53C51,-44,64,-34,69,-20C74,-6,71,12,64,27C57,42,46,54,32,62C18,70,1,74,-16,73C-33,72,-50,66,-61,53C-72,40,-77,20,-76,1C-75,-18,-68,-36,-56,-46C-44,-56,-27,-58,-11,-56C5,-54,25,-62,38,-53Z" transform="translate(100 100)" />
+                        <!-- Eyes -->
+                        <circle cx="75" cy="85" r="14" fill="white"/>
+                        <circle cx="75" cy="85" r="6" fill="black"/>
+                        <circle cx="125" cy="85" r="14" fill="white"/>
+                        <circle cx="125" cy="85" r="6" fill="black"/>
+                        <!-- Mouth -->
+                        <ellipse cx="100" cy="130" rx="20" ry="12" fill="#0369a1"/>
+                    </svg>
+                    <!-- Answer Card Badge -->
+                    <div class="absolute bottom-2 bg-yellow-400 border-4 border-amber-600 rounded-2xl px-6 py-2 text-slate-900 font-extrabold text-3xl md:text-4xl shadow-lg arabic-text ans-text">
+                        ٣
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FOOTER / WEBCAM STATUS -->
+        <footer class="flex justify-between items-center text-xs md:text-sm text-slate-400 bg-slate-900/60 rounded-xl px-4 py-2 border border-slate-800">
+            <div class="flex items-center space-x-2">
+                <div id="cam-status-dot" class="w-3 h-3 rounded-full bg-yellow-500 animate-ping"></div>
+                <span id="cam-status-text">Memuatkan kamera... Kepalkan tangan ✊ untuk TUMBUK!</span>
+            </div>
+            <div class="text-slate-400 font-medium hidden md:block">
+                Petunjuk: Kepal Tangan ✊ = Tumbuk Monster!
+            </div>
+        </footer>
+    </div>
+
+    <!-- START / INSTRUCTIONS OVERLAY MODAL -->
+    <div id="start-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-lg">
+        <div class="bg-gradient-to-b from-indigo-900 to-slate-900 border-4 border-yellow-400 rounded-3xl p-6 md:p-8 max-w-xl w-full text-center shadow-2xl relative">
+            <h1 class="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-500 mb-2 uppercase tracking-wide">
+                MONSTER PUNCH
+            </h1>
+            <p class="text-indigo-200 font-semibold text-lg mb-6">Brain Brawl: Nombor Bahasa Arab (Tahun 1)</p>
+
+            <div class="bg-indigo-950/80 border border-indigo-500/30 rounded-2xl p-4 text-left mb-6 space-y-3">
+                <div class="flex items-start space-x-3">
+                    <span class="text-2xl">📷</span>
+                    <p class="text-sm text-slate-200">Pastikan kamera web anda **aktif** dan ruang kelihatan terang.</p>
+                </div>
+                <div class="flex items-start space-x-3">
+                    <span class="text-2xl">✊</span>
+                    <p class="text-sm text-slate-200">**Kepalkan tangan (Tumbuk)** di hadapan kamera untuk menghala & memukul Monster dengan jawapan betul!</p>
+                </div>
+                <div class="flex items-start space-x-3">
+                    <span class="text-2xl">❤️</span>
+                    <p class="text-sm text-slate-200">Anda mempunyai **3 Nyawa** & masa terhad bagi setiap soalan. Selamat berjuang!</p>
+                </div>
+            </div>
+
+            <button onclick="startGame()" class="w-full bg-gradient-to-r from-amber-400 via-orange-500 to-red-500 hover:from-amber-300 hover:to-red-400 text-slate-950 font-black text-2xl py-4 rounded-2xl shadow-xl transform hover:scale-105 active:scale-95 transition-all">
+                MULA BERMAIN 🥊
+            </button>
+        </div>
+    </div>
+
+    <!-- GAME OVER / VICTORY OVERLAY MODAL -->
+    <div id="end-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-lg">
+        <div class="bg-gradient-to-b from-indigo-900 to-slate-900 border-4 border-yellow-400 rounded-3xl p-6 md:p-8 max-w-md w-full text-center shadow-2xl">
+            <div id="end-icon" class="text-6xl mb-2">🏆</div>
+            <h2 id="end-title" class="text-3xl md:text-4xl font-extrabold text-yellow-400 mb-2">TAHNIAH!</h2>
+            <p id="end-subtitle" class="text-slate-300 mb-6">Anda telah berjaya menewaskan semua Monster!</p>
+
+            <div class="bg-slate-800/80 rounded-2xl p-4 mb-6 border border-slate-700">
+                <div class="text-sm text-slate-400 font-semibold">SKOR AKHIR</div>
+                <div id="final-score" class="text-5xl font-black text-amber-400 my-1">1000</div>
+            </div>
+
+            <button onclick="restartGame()" class="w-full bg-gradient-to-r from-green-400 to-emerald-600 hover:from-green-300 hover:to-emerald-500 text-slate-950 font-black text-xl py-4 rounded-2xl shadow-xl transform hover:scale-105 transition-all">
+                MAIN SEMULA 🔄
+            </button>
+        </div>
+    </div>
+
+    <!-- AUDIO SYNTHESIS & GAME LOGIC ENGINE -->
+    <script>
+        /* =======================================================
+           1. AUDIO SYNTHESIZER (Web Audio API - No External Files)
+           ======================================================= */
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            playPunch() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(160, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.15);
+                
+                gain.gain.setValueAtTime(1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+
+            playSlash() {
+                if (!this.ctx) return;
+                const bufferSize = this.ctx.sampleRate * 0.1;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.setValueAtTime(1000, this.ctx.currentTime);
+                filter.frequency.linearRampToValueAtTime(3000, this.ctx.currentTime + 0.1);
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.7, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                noise.start();
+            }
+
+            playCorrect() {
+                if (!this.ctx) return;
+                const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    
+                    const startTime = this.ctx.currentTime + (idx * 0.08);
+                    gain.gain.setValueAtTime(0, startTime);
+                    gain.gain.linearRampToValueAtTime(0.3, startTime + 0.02);
+                    gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.25);
+                    
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    
+                    osc.start(startTime);
+                    osc.stop(startTime + 0.25);
+                });
+            }
+
+            playWrong() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(110, this.ctx.currentTime + 0.3);
+                
+                gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.3);
+            }
+        }
+
+        const soundFX = new SoundFX();
+
+        /* =======================================================
+           2. EDUCATIONAL DATA (Soalan Nombor Bahasa Arab Tahun 1)
+           ======================================================= */
+        const questionsData = [
+            {
+                visual: "🍎",
+                title: "Berapakah jumlah buah epal ini?",
+                options: ["١", "٢", "٣"],
+                correct: 0,
+                textVal: "1 (Wahid - وَاحِدٌ)"
+            },
+            {
+                visual: "4",
+                title: "Pilih nombor Bahasa Arab bagi nombor 4:",
+                options: ["٣", "٤", "٥"],
+                correct: 1,
+                textVal: "4 (Arba'ah - أَرْبَعَةٌ)"
+            },
+            {
+                visual: "🐱 🐱",
+                title: "Kira jumlah kucing di bawah:",
+                options: ["١", "٢", "٣"],
+                correct: 1,
+                textVal: "2 (Ithnan - اِثْنَانِ)"
+            },
+            {
+                visual: "٥",
+                title: "Nombor '٥' mewakili nombor berapa dalam Rumi?",
+                options: ["5", "2", "7"],
+                correct: 0,
+                textVal: "5 (Khamsah - خَمْسَةٌ)"
+            },
+            {
+                visual: "⭐ ⭐ ⭐",
+                title: "Kira jumlah bintang ini:",
+                options: ["٢", "٣", "٤"],
+                correct: 1,
+                textVal: "3 (Thalathah - ثَلَاثَةٌ)"
+            },
+            {
+                visual: "⭐️ ⭐️ ⭐️ ⭐️ ⭐️ ⭐️",
+                title: "Berapakah jumlah bintang ini?",
+                options: ["٥", "٦", "٧"],
+                correct: 1,
+                textVal: "6 (Sittah - سِتَّةٌ)"
+            },
+            {
+                visual: "٧",
+                title: "Nombor '٧' bermaksud nombor berapa dalam Rumi?",
+                options: ["7", "8", "6"],
+                correct: 0,
+                textVal: "7 (Sab'ah - سَبْعَةٌ)"
+            },
+            {
+                visual: "3",
+                title: "Mana satukah nombor '3' dalam Bahasa Arab?",
+                options: ["٢", "٣", "٤"],
+                correct: 1,
+                textVal: "3 (Thalathah)"
+            },
+            {
+                visual: "🍌 🍌 🍌 🍌 🍌 🍌 🍌 🍌",
+                title: "Kira jumlah pisang ini:",
+                options: ["٧", "٨", "٩"],
+                correct: 1,
+                textVal: "8 (Thamaniyah - ثَمَانِيَةٌ)"
+            },
+            {
+                visual: "10",
+                title: "Apakah nombor Bahasa Arab untuk 10?",
+                options: ["٩", "١٠", "٨"],
+                correct: 1,
+                textVal: "10 ('Asyrah - عَشَرَةٌ)"
+            }
+        ];
+
+        /* =======================================================
+           3. GAME STATE MANAGEMENT
+           ======================================================= */
+        let currentQIndex = 0;
+        let score = 0;
+        let lives = 3;
+        let timer = 15;
+        let timerInterval = null;
+        let isProcessingPunch = false;
+        let gameActive = false;
+
+        /* Visual Canvas FX Arrays */
+        let slashes = [];
+        let particles = [];
+
+        /* Canvas Setup */
+        const fxCanvas = document.getElementById('fx_canvas');
+        const fxCtx = fxCanvas.getContext('2d');
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+
+        function resizeCanvas() {
+            canvasElement.width = window.innerWidth;
+            canvasElement.height = window.innerHeight;
+            fxCanvas.width = window.innerWidth;
+            fxCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        /* =======================================================
+           4. GAME CONTROL FLOW
+           ======================================================= */
+        function startGame() {
+            soundFX.init();
+            document.getElementById('start-modal').classList.add('hidden');
+            score = 0;
+            lives = 3;
+            currentQIndex = 0;
+            gameActive = true;
+            updateHUD();
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            if (currentQIndex >= questionsData.length) {
+                endGame(true);
+                return;
+            }
+
+            const q = questionsData[currentQIndex];
+            document.getElementById('question-number').innerText = `SOALAN ${currentQIndex + 1} / ${questionsData.length}`;
+            document.getElementById('question-title').innerText = q.title;
+            document.getElementById('q-visual').innerText = q.visual;
+            document.getElementById('q-text').innerText = "";
+
+            // Set Monster Answers
+            const cards = document.querySelectorAll('.ans-text');
+            cards.forEach((card, idx) => {
+                card.innerText = q.options[idx];
+            });
+
+            // Reset Monsters visual state
+            document.querySelectorAll('.monster-card').forEach(m => {
+                m.classList.remove('opacity-0', 'scale-0');
+                m.style.pointerEvents = 'auto';
+            });
+
+            // Start Timer
+            clearInterval(timerInterval);
+            timer = 15;
+            updateTimerBar();
+            timerInterval = setInterval(() => {
+                if (!gameActive) return;
+                timer--;
+                updateTimerBar();
+                if (timer <= 0) {
+                    clearInterval(timerInterval);
+                    soundFX.playWrong();
+                    takeDamage("Masa Tamat!");
+                }
+            }, 1000);
+
+            isProcessingPunch = false;
+        }
+
+        function updateTimerBar() {
+            const bar = document.getElementById('timer-bar');
+            const pct = (timer / 15) * 100;
+            bar.style.width = `${pct}%`;
+            if (pct < 30) {
+                bar.className = "bg-gradient-to-r from-red-500 to-rose-600 h-full w-full transition-all duration-300";
+            } else {
+                bar.className = "bg-gradient-to-r from-green-400 to-emerald-500 h-full w-full transition-all duration-300";
+            }
+        }
+
+        function handlePunch(monsterIdx) {
+            if (isProcessingPunch || !gameActive) return;
+            isProcessingPunch = true;
+
+            const q = questionsData[currentQIndex];
+            const monsterEl = document.getElementById(`monster-${monsterIdx}`);
+            const rect = monsterEl.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+
+            // Trigger Slash FX & Sounds
+            soundFX.playPunch();
+            soundFX.playSlash();
+            createSlashEffect(centerX, centerY);
+            createParticles(centerX, centerY);
+
+            if (monsterIdx === q.correct) {
+                // CORRECT PUNCH!
+                soundFX.playCorrect();
+                score += 100 + (timer * 10);
+                updateHUD();
+
+                // Animate Monster Defeat
+                monsterEl.classList.add('scale-0', 'opacity-0');
+                
+                setTimeout(() => {
+                    currentQIndex++;
+                    loadQuestion();
+                }, 1000);
+            } else {
+                // WRONG PUNCH!
+                soundFX.playWrong();
+                monsterEl.classList.add('animate-bounce');
+                setTimeout(() => monsterEl.classList.remove('animate-bounce'), 500);
+
+                takeDamage("Jawapan Salah!");
+                setTimeout(() => { isProcessingPunch = false; }, 800);
+            }
+        }
+
+        function takeDamage(msg) {
+            lives--;
+            updateHUD();
+
+            if (lives <= 0) {
+                endGame(false);
+            }
+        }
+
+        function updateHUD() {
+            document.getElementById('score-text').innerText = score;
+            
+            // Render Hearts
+            const heartsContainer = document.getElementById('lives-container');
+            heartsContainer.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                const heart = document.createElement('span');
+                heart.innerText = i < lives ? '❤️' : '🖤';
+                heart.className = i < lives ? 'text-red-500 animate-pulse' : 'text-slate-600';
+                heartsContainer.appendChild(heart);
+            }
+        }
+
+        function endGame(isVictory) {
+            gameActive = false;
+            clearInterval(timerInterval);
+            const endModal = document.getElementById('end-modal');
+            endModal.classList.remove('hidden');
+
+            if (isVictory) {
+                document.getElementById('end-icon').innerText = '🏆';
+                document.getElementById('end-title').innerText = 'TAHNIAH! JUARA!';
+                document.getElementById('end-subtitle').innerText = 'Anda berjaya menewaskan semua monster!';
+            } else {
+                document.getElementById('end-icon').innerText = '💥';
+                document.getElementById('end-title').innerText = 'PERMAINAN TAMAT!';
+                document.getElementById('end-subtitle').innerText = 'Cuba lagi untuk kalahkan monster!';
+            }
+            document.getElementById('final-score').innerText = score;
+        }
+
+        function restartGame() {
+            document.getElementById('end-modal').classList.add('hidden');
+            startGame();
+        }
+
+        /* =======================================================
+           5. CANVAS SLASH EFFECTS & PARTICLE SYSTEM
+           ======================================================= */
+        function createSlashEffect(x, y) {
+            slashes.push({
+                x: x,
+                y: y,
+                angle: (Math.random() - 0.5) * Math.PI / 2,
+                length: 180,
+                life: 1.0
+            });
+        }
+
+        function createParticles(x, y) {
+            for (let i = 0; i < 25; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 12 + 4;
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    color: ['#facc15', '#ef4444', '#22c55e', '#38bdf8'][Math.floor(Math.random() * 4)],
+                    size: Math.random() * 8 + 4,
+                    life: 1.0
+                });
+            }
+        }
+
+        function renderFX() {
+            fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+
+            // Render Slashes
+            slashes.forEach((s, idx) => {
+                fxCtx.save();
+                fxCtx.translate(s.x, s.y);
+                fxCtx.rotate(s.angle);
+                fxCtx.strokeStyle = `rgba(255, 255, 255, ${s.life})`;
+                fxCtx.lineWidth = 14 * s.life;
+                fxCtx.shadowBlur = 20;
+                fxCtx.shadowColor = '#facc15';
+                
+                fxCtx.beginPath();
+                fxCtx.moveTo(-s.length / 2, 0);
+                fxCtx.lineTo(s.length / 2, 0);
+                fxCtx.stroke();
+                fxCtx.restore();
+
+                s.life -= 0.08;
+                if (s.life <= 0) slashes.splice(idx, 1);
+            });
+
+            // Render Particles
+            particles.forEach((p, idx) => {
+                fxCtx.save();
+                fxCtx.fillStyle = p.color;
+                fxCtx.globalAlpha = p.life;
+                fxCtx.beginPath();
+                fxCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                fxCtx.fill();
+                fxCtx.restore();
+
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.3; // Gravity
+                p.life -= 0.04;
+                if (p.life <= 0) particles.splice(idx, 1);
+            });
+
+            requestAnimationFrame(renderFX);
+        }
+        renderFX();
+
+        /* =======================================================
+           6. MEDIAPIPE HAND GESTURE RECOGNITION (PUNCH DETECTOR)
+           ======================================================= */
+        let lastFistState = false;
+
+        function isFistGesture(landmarks) {
+            const wrist = landmarks[0];
+            const fingerTips = [8, 12, 16, 20];
+            const fingerPIPs = [6, 10, 14, 18];
+            
+            let foldedFingers = 0;
+            for (let i = 0; i < 4; i++) {
+                const tipDist = Math.hypot(landmarks[fingerTips[i]].x - wrist.x, landmarks[fingerTips[i]].y - wrist.y);
+                const pipDist = Math.hypot(landmarks[fingerPIPs[i]].x - wrist.x, landmarks[fingerPIPs[i]].y - wrist.y);
+                if (tipDist < pipDist) {
+                    foldedFingers++;
+                }
+            }
+            return foldedFingers >= 3;
+        }
+
+        function onHandResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                document.getElementById('cam-status-dot').className = "w-3 h-3 rounded-full bg-green-500";
+                document.getElementById('cam-status-text').innerText = "Tangan Dikesan! Sedia untuk TUMBUK ✊";
+
+                for (const landmarks of results.multiHandLandmarks) {
+                    // Draw Skeleton landmarks on camera feed
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 3});
+                    drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 1, radius: 4});
+
+                    // Calculate Fist Position (Mirrored screen coordinates)
+                    const indexMCP = landmarks[9]; // Middle MCP joint as fist center
+                    const screenX = (1 - indexMCP.x) * window.innerWidth;
+                    const screenY = indexMCP.y * window.innerHeight;
+
+                    const isFist = isFistGesture(landmarks);
+
+                    // Draw Punch Cursor / Reticle on Overlay FX
+                    fxCtx.save();
+                    fxCtx.beginPath();
+                    fxCtx.arc(screenX, screenY, isFist ? 40 : 25, 0, Math.PI * 2);
+                    fxCtx.fillStyle = isFist ? 'rgba(239, 68, 68, 0.6)' : 'rgba(250, 204, 21, 0.4)';
+                    fxCtx.strokeStyle = isFist ? '#ef4444' : '#facc15';
+                    fxCtx.lineWidth = 4;
+                    fxCtx.fill();
+                    fxCtx.stroke();
+
+                    // Draw Glove / Punch Icon at fist location
+                    fxCtx.font = "30px sans-serif";
+                    fxCtx.textAlign = "center";
+                    fxCtx.textBaseline = "middle";
+                    fxCtx.fillText(isFist ? "🥊" : "✋", screenX, screenY);
+                    fxCtx.restore();
+
+                    // Collision detection with Monsters
+                    if (isFist && !lastFistState && gameActive) {
+                        checkMonsterHit(screenX, screenY);
+                    }
+                    lastFistState = isFist;
+                }
+            } else {
+                document.getElementById('cam-status-dot').className = "w-3 h-3 rounded-full bg-yellow-500 animate-ping";
+                document.getElementById('cam-status-text').innerText = "Tunjukkan tangan anda di hadapan kamera...";
+            }
+            canvasCtx.restore();
+        }
+
+        function checkMonsterHit(x, y) {
+            for (let i = 0; i < 3; i++) {
+                const monsterEl = document.getElementById(`monster-${i}`);
+                if (!monsterEl) continue;
+                const rect = monsterEl.getBoundingClientRect();
+                
+                // Expand hit boundary slightly for easier gameplay for kids
+                const margin = 20;
+                if (x >= rect.left - margin && x <= rect.right + margin &&
+                    y >= rect.top - margin && y <= rect.bottom + margin) {
+                    handlePunch(i);
+                    break;
+                }
+            }
+        }
+
+        /* Initialize MediaPipe Hands */
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.65,
+            minTrackingConfidence: 0.65
+        });
+
+        hands.onResults(onHandResults);
+
+        /* Initialize Webcam Utils */
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720
+        });
+
+        camera.start().catch(err => {
+            console.warn("Camera failed to load:", err);
+            document.getElementById('cam-status-text').innerText = "Kamera tidak dijumpai. Boleh guna klik tetikus/sentuhan untuk bermain!";
+        });
+    </script>
+</body>
+</html>
